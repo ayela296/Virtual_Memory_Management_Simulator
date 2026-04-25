@@ -1,0 +1,8 @@
+PhysicalRAMSize = 12
+PageSize = 4
+TLBSize = 2
+TLBLatency = 1.0     
+RAMLatency = 100.0
+DiskLatency = 10000000.0
+MinValidAddress = 0x00000000
+MaxValidAddress = 0xFFFFFFFF

@@ -1,0 +1,35 @@
+# Test with 3 frames (12 bytes RAM, 4 byte pages)
+# VPNs should be 0, 1, 2, 3, 4, etc.
+
+# Phase 1: Fill all 3 frames
+R 0x0000  # VPN 0, offset 0     1
+R 0x0004  # VPN 1, offset 0     2
+R 0x0008  # VPN 2, offset 0     3
+
+# Phase 2: Access existing pages (should hit)
+R 0x0000  # VPN 0 - should be HIT       4
+R 0x0004  # VPN 1 - HIT                 5
+
+# Phase 3: New page - causes eviction (FIFO evicts VPN 0)
+R 0x000C  # VPN 3 - PAGE FAULT, evict VPN 0         6
+
+# Phase 4: Write operations (dirty pages)
+W 0x0008  # VPN 2 - WRITE (dirty)                   7
+W 0x0004  # VPN 1 - WRITE (dirty)                   8
+
+# Phase 5: Another new page - evict dirty page      9
+R 0x0010  # VPN 4 - PAGE FAULT, evict page (should write back if dirty)
+
+# Phase 6: Access evicted page
+R 0x0000  # VPN 0 - PAGE FAULT (was evicted)        10
+
+# Phase 7: TLB test (same VPN repeatedly)
+R 0x0004  # VPN 1                                   11  
+R 0x0004  # VPN 1 - TLB HIT                         12
+R 0x0005  # VPN 1 - TLB HIT                         13
+
+# Phase 8: TLB replacement (TLB size=2)
+R 0x0008  # VPN 2                                   14
+R 0x000C  # VPN 3                                   15        
+R 0x0010  # VPN 4 - TLB miss (evicts older TLB entry)   16
+R 0x0008  # VPN 2 - TLB miss (not in TLB anymore)       17
