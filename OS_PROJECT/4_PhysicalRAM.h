@@ -44,19 +44,40 @@ public:
     // Allocate a specific frame (used when reusing evicted frame)
     bool allocateSpecificFrame(uint32_t frameNumber, bool Dirty)
     {
-        if (frameNumber >= numFrames) {
-            return false;
-        }
+        if (frameNumber >= numFrames) {return false;}
 
-        if (allocatedFrames[frameNumber]) {
-            return false;
+        if (allocatedFrames[frameNumber]) {return false;}
+
+        // Rebuild free queue, skipping frameNumber once
+        queue<uint32_t> temp;
+        bool found = false;
+        while (!freeFrames.empty()) {
+            uint32_t f = freeFrames.front();
+            freeFrames.pop();
+            if (f == frameNumber && !found) {
+                found = true;   // drop it - this is the one we are allocating
+            }
+            else {
+                temp.push(f);
+            }
         }
+        freeFrames = temp;
+
+        if (!found) return false;   // frame was not actually free
 
         allocatedFrames[frameNumber] = true;
-        dirtyFrames[frameNumber] = Dirty;  // Set dirty status based on whether this frame is being reused after eviction
+        dirtyFrames[frameNumber] = Dirty;
         allocatedFramesCount++;
-        freeFrames.pop(); 
         return true;
+
+        //Fault: Blindly removes one frame which could be incorrect if 
+        // queue front is not same frame number
+        //allocatedFrames[frameNumber] = true;
+        //dirtyFrames[frameNumber] = Dirty;  
+        // Set dirty status based on whether this frame is being reused after eviction
+        //allocatedFramesCount++;
+        //freeFrames.pop(); 
+        //return true;
     }
 
     // Free a frame (make it available again)
