@@ -1,37 +1,37 @@
 #include "1_Config.h"
 #include "2_TLB.h"
-#include "3_Pagetable.h"
+#include "3_PageTable.h"      
 #include "4_PhysicalRAM.h"
 #include "5_Algorithms.h"
 #include "6_Disc_Stats.h"
 
 #include <iostream>
+#include <iomanip>
 using namespace std;
 
 class Simulator
 {
 private:
-    //...........
-    //hello
-    // Core components
-    ConfigParser configParser;
-    TraceParser traceParser;
+    ConfigParser     configParser;
+    TraceParser      traceParser;
     AddressGenerator addrGenerator;
-    PageTable pageTable;
-    PhysicalRAM physicalRAM;
-    TLB tlb;
-    VirtualDisk disk;
-    StatsEngine stats;
-    vector<uint32_t> PhysicalAddresses;
-    vector<bool> PhysicalisWrite;
+    PageTable        pageTable;
+    PhysicalRAM      physicalRAM;
+    TLB              tlb;
+    VirtualDisk      disk;
+    StatsEngine      stats;
 
-    // Replacement algorithm
+    vector<uint32_t> PhysicalAddresses;
+    vector<bool>     PhysicalisWrite;
+
     ReplacementAlgorithm* replacementAlgo;
 
-    // Configuration
     uint32_t numFrames;
     uint32_t pageSize;
     uint32_t tlbSize;
+
+    bool debugMode;
+
 public:
     Simulator() : addrGenerator(traceParser, configParser),
         pageTable(configParser.getPageSize()),
@@ -39,7 +39,8 @@ public:
         tlb(configParser.getTLBSize()),
         stats(configParser.getTLBLatency(),
             configParser.getRAMLatency(),
-            configParser.getDiskLatency())
+            configParser.getDiskLatency()),
+        debugMode(false)
     {
         numFrames = configParser.getNumFrames();
         pageSize = configParser.getPageSize();
@@ -49,49 +50,40 @@ public:
 
     ~Simulator()
     {
-        if (replacementAlgo) {
-            delete replacementAlgo;
-        }
+        if (replacementAlgo) delete replacementAlgo;
     }
 
-    // Load configuration from file
+    void setDebugMode(bool on) { debugMode = on; }
+
     bool loadConfiguration(const string& configFile)
-    {   
+    {
         configParser.loadFromFile(configFile);
         configParser.printConfig();
         cout << endl;
 
-        // Re-initialize components with new config
         numFrames = configParser.getNumFrames();
         pageSize = configParser.getPageSize();
         tlbSize = configParser.getTLBSize();
 
-        // Reinitialize components that depend on config
         physicalRAM = PhysicalRAM(numFrames);
         tlb = TLB(tlbSize);
         return true;
     }
 
-    // Load trace file
     bool loadTraceFile(const string& traceFile)
     {
         traceParser.loadFromFile(traceFile);
-
         if (traceParser.size() == 0) {
             cerr << "Error: No valid references in trace file!" << endl;
             return false;
         }
-
         traceParser.printStats();
         return true;
     }
 
-    // Set replacement algorithm
     void setReplacementAlgorithm(const string& algorithm)
     {
-        if (replacementAlgo) {
-            delete replacementAlgo;
-        }
+        if (replacementAlgo) delete replacementAlgo;
 
         if (algorithm == "FIFO" || algorithm == "fifo") {
             replacementAlgo = new FIFOReplacement(numFrames);
@@ -106,267 +98,289 @@ public:
             cout << "\n[ALGORITHM] Using OPT Replacement Algorithm" << endl;
         }
         else {
-            cout << "\n[WARNING] Unknown algorithm: " << algorithm << ". Using LRU as default." << endl;
+            cout << "\n[WARNING] Unknown algorithm '" << algorithm << "'. Using LRU." << endl;
             replacementAlgo = new LRUReplacement(numFrames);
         }
     }
 
-    // Precompute VPNs and offsets
     void precomputeAddresses()
     {
         addrGenerator.precomputeVPNsAndOffsets();
     }
 
-    // Get simulated physical address (for page hit)
     uint32_t recordPhysicalAddress(uint32_t frameNumber, uint32_t offset)
     {
-        uint32_t PhysicalAdd = (frameNumber * pageSize) + offset;
-        PhysicalAddresses.push_back(PhysicalAdd);
-        return PhysicalAdd;
+        uint32_t physAddr = (frameNumber * pageSize) + offset;
+        PhysicalAddresses.push_back(physAddr);
+        return physAddr;
     }
 
     void recordPhysicalAddOperation(bool isWrite)
     {
         PhysicalisWrite.push_back(isWrite);
-        return;
     }
 
-    // Handle page fault - load page from disk
     void handlePageFault(uint32_t vpn, bool isWrite)
     {
-        uint32_t victimFrame;       //KEEP RECORD OF THE FRAME ALLOCATED  
-        uint32_t victimVPN = 0;
+        uint32_t frameToUse;
         bool needEviction = replacementAlgo->needsEviction();
 
         if (needEviction) {
-            // Select victim using replacement algorithm
-            victimVPN = replacementAlgo->selectVictim();
+            // Select victim and get its frame
+            uint32_t victimVPN = replacementAlgo->selectVictim();
+            uint32_t victimFrameNum = pageTable.getFrameNumber(victimVPN);
 
-            // Get victim's frame number from page table
-            uint32_t victimFrameNum;
-            bool victimValid, victimDirty;
-            victimFrameNum = pageTable.getFrameNumber(victimVPN);
-            victimDirty = pageTable.isDirty(victimVPN);
-            victimValid = pageTable.isPageLoaded(victimVPN);
-
-            // Check if victim is dirty - write back to disk
+            // Write dirty victim back to disk
             if (pageTable.isDirty(victimVPN)) {
                 stats.recordDirtyWrite();
                 disk.writeDirtyPage(victimVPN);
             }
 
-            // Invalidate victim in TLB and Page Table
+            // Remove victim from TLB and page table
             tlb.invalidate(victimVPN);
             pageTable.invalidatePage(victimVPN);
-            physicalRAM.freeFrame(victimFrameNum);
-
-            // Notify replacement algorithm about eviction
             replacementAlgo->pageEvicted(victimVPN);
 
-            victimFrame = victimFrameNum;
+            //use victim frame
+            frameToUse = victimFrameNum;
+            physicalRAM.markDirtyBit(frameToUse, isWrite);
         }
         else {
-            // Allocate new free frame
-            if (!physicalRAM.allocateFreeFrame(victimFrame, isWrite)) {
+            // Free frames available
+            if (!physicalRAM.allocateFreeFrame(frameToUse, isWrite)) {
+                cerr << "ERROR: allocateFreeFrame failed unexpectedly" << endl;
                 return;
             }
         }
 
-        // Load page into allocated frame
-        if (needEviction) {
-            physicalRAM.allocateSpecificFrame(victimFrame, isWrite);
-        }
-
-        // Update page table
-        pageTable.insertPage(vpn, victimFrame, true, isWrite);
-
-        // Update TLB
-        tlb.insert(vpn, victimFrame, true, isWrite);
-
-        // Notify replacement algorithm about page load
+        // Load new page into chosen frame
+        pageTable.insertPage(vpn, frameToUse, true, isWrite);
+        tlb.insert(vpn, frameToUse, true, isWrite);
         replacementAlgo->pageLoaded(vpn);
-
     }
 
-    // Process a single memory reference
-    void processReference(uint32_t vpn, uint32_t offset, bool isWrite, bool addressValid, size_t stepNum)
+    void processReference(uint32_t vpn, uint32_t offset, bool isWrite,
+        bool addressValid, size_t stepNum)
     {
         stats.incrementReference();
 
-        // Step 1: TLB Lookup
+        if (debugMode) {
+            cout << "\n--- Step " << stepNum << " ---" << endl;
+            cout << "  VPN=0x" << hex << vpn
+                << "  Offset=0x" << offset << dec
+                << "  Op=";
+            if (isWrite) { cout << "WRITE"; }
+            else { cout << "READ"; }
+            cout << endl;
+        }
+
         uint32_t frameNumber;
         bool valid, dirty;
 
         if (tlb.TLBlookup(vpn, frameNumber, valid, dirty)) {
             // TLB HIT
             stats.recordTLBHit();
-
             replacementAlgo->pageAccessed(vpn);
-                                        //in case if address is same but different operation
             physicalRAM.markDirtyBit(frameNumber, isWrite);
-            pageTable.insertPage(vpn, frameNumber, true, isWrite);  // dirty=true
-            tlb.insert(vpn, frameNumber, true, isWrite);            // Update TLB with dirty
-           
+            pageTable.insertPage(vpn, frameNumber, true, isWrite);
+            tlb.insert(vpn, frameNumber, true, isWrite);
 
             uint32_t physAddr = recordPhysicalAddress(frameNumber, offset);
             recordPhysicalAddOperation(isWrite);
 
+            if (debugMode) {
+                cout << "  RESULT  : TLB HIT" << endl;
+                cout << "  Frame   : " << frameNumber << endl;
+                cout << "  PhysAddr: 0x" << hex << physAddr << dec << endl;
+                cout << "  Cost    : " << configParser.getTLBLatency()
+                    << " ns  (TLB only)" << endl;
+            }
         }
         else {
-            // TLB MISS - Need to check page table
             stats.recordTLBMiss();
 
-            // Step 2: Page Table Lookup
+            if (debugMode) cout << "  TLB MISS -> checking page table" << endl;
+
             if (pageTable.pageTableLookup(vpn, frameNumber, valid, dirty)) {
-                // Page HIT - Page is in RAM
+                // PAGE HIT
                 stats.recordPageHit();
                 replacementAlgo->pageAccessed(vpn);
-
-                // Update dirty bit 
                 physicalRAM.markDirtyBit(frameNumber, isWrite);
                 pageTable.insertPage(vpn, frameNumber, true, isWrite);
-
-            // Insert into TLB
                 tlb.insert(vpn, frameNumber, true, isWrite);
 
-                // Generate physical address
                 uint32_t physAddr = recordPhysicalAddress(frameNumber, offset);
                 recordPhysicalAddOperation(isWrite);
+
+                if (debugMode) {
+                    cout << "  RESULT  : PAGE HIT (TLB miss, RAM hit)" << endl;
+                    cout << "  Frame   : " << frameNumber << endl;
+                    cout << "  PhysAddr: 0x" << hex << physAddr << dec << endl;
+                    cout << "  Cost    : "
+                        << configParser.getTLBLatency() + configParser.getRAMLatency()
+                        << " ns  (TLB + RAM)" << endl;
+                }
             }
             else {
-                // Page FAULT - Page not in RAM
+                // PAGE FAULT
                 stats.recordPageFault();
                 disk.readPage(vpn);
 
-                // Handle page fault (load from disk, evict if needed)
+                if (debugMode) cout << "  PAGE FAULT -> loading from disk..." << endl;
+
                 handlePageFault(vpn, isWrite);
 
-                // After loading, update TLB with new mapping
-                uint32_t newFrame;
-                bool newValid, newDirty;
-
-                newFrame = pageTable.getFrameNumber(vpn);
-                newDirty = pageTable.isDirty(vpn);
-                newValid = pageTable.isPageLoaded(vpn);
+                uint32_t newFrame = pageTable.getFrameNumber(vpn);
                 tlb.insert(vpn, newFrame, true, isWrite);
 
-                // stats.recordRAMAccess();
-                // Generate physical address
                 uint32_t physAddr = recordPhysicalAddress(newFrame, offset);
                 recordPhysicalAddOperation(isWrite);
+
+                if (debugMode) {
+                    cout << "  RESULT  : PAGE FAULT" << endl;
+                    cout << "  Frame   : " << newFrame << endl;
+                    cout << "  PhysAddr: 0x" << hex << physAddr << dec << endl;
+                    cout << "  Cost    : "
+                        << configParser.getTLBLatency()
+                        + configParser.getRAMLatency()
+                        + configParser.getDiskLatency()
+                        << " ns  (TLB + RAM + Disk)" << endl;
+                }
             }
         }
     }
+    void reset()
+    {
+        pageTable.clear();
 
-    // Run full simulation
+        // Full reconstruction
+        physicalRAM = PhysicalRAM(numFrames);
+        tlb = TLB(tlbSize);
+
+        disk.reset();
+        stats.reset();
+        addrGenerator.reset();     
+        PhysicalAddresses.clear();
+        PhysicalisWrite.clear();
+
+        if (replacementAlgo) {
+            replacementAlgo->reset(); 
+        }
+    }
+
     void runSimulation(const string& algorithm)
     {
         cout << "\n" << string(70, '=') << endl;
-        cout << "STARTING VIRTUAL MEMORY SIMULATION" << endl;
+        cout << "STARTING SIMULATION  [" << algorithm << "]" << endl;
         cout << string(70, '=') << endl;
 
-        // Precompute addresses
         precomputeAddresses();
-
-        // Set replacement algorithm
         setReplacementAlgorithm(algorithm);
 
-        // Get precomputed data
         const auto& vpns = addrGenerator.getVPNs();
         const auto& offsets = addrGenerator.getOffsets();
         const auto& validity = addrGenerator.getValidity();
         const auto& writeFlags = addrGenerator.getWriteFlags();
-        const auto& ValidAddresses = addrGenerator.getValidAddresses();
 
-        cout << "\nStarting simulation with " << vpns.size() << " references..." << endl;
+        cout << "\nSimulating " << vpns.size() << " references..." << endl;
         cout << string(70, '-') << endl;
 
-        // OPT special handling: set future references
         OPTReplacement* opt = dynamic_cast<OPTReplacement*>(replacementAlgo);
-        if (opt) {
-            opt->setFutureReferences(vpns);
-        }
+        if (opt) opt->setFutureReferences(vpns);
+
         cout << endl;
-        // Process each reference
-        for (size_t i = 0; i < vpns.size(); i++) {
-            //incase of opt current position = 0
-            processReference(vpns[i], offsets[i], writeFlags[i], validity[i], i + 1);
 
-            //Advance OPT position AFTER processing
-            if (opt) {
-                opt->advancePosition();
-            }
+        for (size_t i = 0; i < vpns.size(); i++) {
+            processReference(vpns[i], offsets[i], writeFlags[i], validity[i], i + 1);
+            if (opt) opt->advancePosition();
         }
 
-        // Print final results
         printFinalResults();
     }
 
-    // Run comparison of all algorithms
-    void runComparison()
+    void runBeladyTest(uint32_t maxFrames = 8)
     {
         cout << "\n" << string(70, '=') << endl;
-        cout << "RUNNING ALGORITHM COMPARISON" << endl;
+        cout << "BELADY'S ANOMALY TEST  (FIFO, frames 1.." << maxFrames << ")" << endl;
+        cout << string(70, '-') << endl;
+        cout << left
+            << setw(14) << "Frames"
+            << setw(15) << "Page Faults"
+            << setw(12) << "TLB Hits"
+            << setw(16) << "EAT (ns)"
+            << "Belady?" << endl;
+        cout << string(70, '-') << endl;
+
+        uint32_t prevFaults = UINT32_MAX;
+
+        for (uint32_t frames = 1; frames <= maxFrames; frames++) {
+
+            // Full reconstruction
+            pageTable.clear();
+            physicalRAM = PhysicalRAM(frames);
+            tlb = TLB(tlbSize);
+            disk.reset();
+            stats.reset();
+            addrGenerator.reset();
+            PhysicalAddresses.clear();
+            PhysicalisWrite.clear();
+
+            if (replacementAlgo) delete replacementAlgo;
+            replacementAlgo = new FIFOReplacement(frames);
+
+            addrGenerator.precomputeVPNsAndOffsets();
+
+            const auto& vpns = addrGenerator.getVPNs();
+            const auto& offsets = addrGenerator.getOffsets();
+            const auto& validity = addrGenerator.getValidity();
+            const auto& writeFlags = addrGenerator.getWriteFlags();
+
+            for (size_t i = 0; i < vpns.size(); i++)
+                processReference(vpns[i], offsets[i], writeFlags[i], validity[i], i + 1);
+
+            uint32_t faults = stats.getPageFaults();
+            bool anomaly = (prevFaults != UINT32_MAX && faults > prevFaults);
+
+            cout << left
+                << setw(14) << frames
+                << setw(15) << faults
+                << setw(12) << stats.getTLBHits()
+                << setw(16) << fixed << setprecision(2) << stats.getEAT()
+                << (anomaly ? "<-- BELADY'S ANOMALY!" : "") << endl;
+
+            prevFaults = faults;
+        }
+
         cout << string(70, '=') << endl;
+        cout << "Note: Belady's Anomaly only occurs with FIFO, never with LRU or OPT." << endl;
 
-        vector<string> algorithms = { "FIFO", "LRU", "OPT" };
-
-        for (const string& algo : algorithms) {
-            // Reset all components
-            reset();
-
-            // Run simulation with this algorithm
-            runSimulation(algo);
-
-            cout << "\n" << string(70, '-') << endl;
-            cout << "Press Enter to continue to next algorithm...";
-            cin.get();
-        }
+        //original frame count
+        physicalRAM = PhysicalRAM(numFrames);
+        tlb = TLB(tlbSize);
+        if (replacementAlgo) { delete replacementAlgo; replacementAlgo = nullptr; }
     }
 
-    // Reset simulator state
-    void reset()
-    {
-        pageTable.clear();
-        physicalRAM.reset();
-        tlb.reset();
-        disk.reset();
-        stats.reset();
-        addrGenerator.reset();
-
-        if (replacementAlgo) {
-            replacementAlgo->reset();
-        }
-
-        PhysicalAddresses.clear();
-        PhysicalisWrite.clear();
-        replacementAlgo->reset();
-    }
-
-    // Print final simulation results
     void printFinalResults()
     {
         cout << "\n" << string(70, '=') << endl;
-        cout << "FINAL SIMULATION RESULTS FOR ALGORITHM " << replacementAlgo->getName() << endl;
+        cout << "FINAL RESULTS  [" << replacementAlgo->getName() << "]" << endl;
         cout << string(70, '=') << endl;
 
-        // Performance Statistics   
         stats.print();
 
-        // Effective Access Time
-        cout << "\n[EFFECTIVE ACCESS TIME (EAT)]:" << endl;
+        cout << "\n[EFFECTIVE ACCESS TIME]" << endl;
         cout << "  EAT = " << fixed << setprecision(2) << stats.getEAT() << " ns" << endl;
 
         cout << "\n" << string(70, '=') << endl;
-        cout << "SIMULATION COMPLETED FOR ALGORITHM " << replacementAlgo->getName() << endl;
+        cout << "SIMULATION COMPLETE  [" << replacementAlgo->getName() << "]" << endl;
         cout << string(70, '=') << endl;
     }
 };
 
 // ============================================================================
-// MAIN FUNCTION
+// MAIN
 // ============================================================================
-int main(int argc, char* argv[])
+int main()
 {
     cout << "\n";
     cout << "+=====================================================+" << endl;
@@ -376,36 +390,37 @@ int main(int argc, char* argv[])
 
     Simulator sim;
 
-    // Default file paths
     string configFile = "Config.txt";
     string traceFile = "Trace_Memory_Check.txt";
-    string algorithm = "LRU";
-    string algorithm1 = "FIFO";
-    string algorithm2 = "OPT";
 
-    // Load configuration
-    if (!sim.loadConfiguration(configFile)) {
-        cerr << "Failed to load configuration!" << endl;
-        return 1;
-    }
+    if (!sim.loadConfiguration(configFile)) { cerr << "Failed to load config!" << endl; return 1; }
+    if (!sim.loadTraceFile(traceFile)) { cerr << "Failed to load trace!" << endl;  return 1; }
 
-    // Load trace file
-    if (!sim.loadTraceFile(traceFile)) {
-        cerr << "Failed to load trace file!" << endl;
-        return 1;
-    }
-
-    // Run simulation
-    sim.runSimulation(algorithm);
+    // Normal runs
+    sim.runSimulation("LRU");
     system("pause");
     sim.reset();
-    sim.runSimulation(algorithm1);
+
+    sim.runSimulation("FIFO");
     system("pause");
     sim.reset();
-    sim.runSimulation(algorithm2);
 
-    // // Uncomment to run comparison of all algorithms
-    // sim.runComparison();
+    sim.runSimulation("OPT");
+    system("pause");
+
+    // reset() before debug run
+    sim.reset();
+
+    // Debug mode
+    cout << "\n\n=== DEBUG MODE (step-by-step trace) ===" << endl;
+    sim.setDebugMode(true);
+    sim.runSimulation("LRU");
+    sim.setDebugMode(false);
+    system("pause");
+
+    // Belady's Anomaly comparison table
+    sim.reset();
+    sim.runBeladyTest(8);
 
     return 0;
 }
