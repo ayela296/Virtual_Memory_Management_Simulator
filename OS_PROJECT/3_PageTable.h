@@ -27,6 +27,9 @@ struct PageTableEntry
     }
 };
 
+// ============================================================================
+// CLASS 5: Page Table
+// ============================================================================
 class PageTable
 {
 private:
@@ -110,9 +113,7 @@ public:
         return (it != pageTable.end() && it->second.valid);
     }
 
-    // ====================================================================
-    // Statistics and Information
-    // ====================================================================
+    // ====== Statistics and Information ======
 
     size_t getSize() const {
         return pageTable.size();
@@ -157,9 +158,7 @@ public:
             (100.0 * pageFaults / (pageFaults + pageHits)) : 0.0;
     }
 
-    // ====================================================================
-    // Printing Functions
-    // ====================================================================
+    // ====== Printing Functions ======
 
     // Print all page table entries
     void printPT() const {
@@ -229,16 +228,13 @@ public:
             << " | Hit Rate: " << fixed << setprecision(2) << getHitRate() << "%" << endl;
     }
 
-    // ====================================================================
-    // Utility Functions
-    // ====================================================================
+    // ===== Utility Functions ======
 
     // Clear the entire page table
     void clear() {
         pageTable.clear();
         pageFaults = 0;
         pageHits = 0;
-        cout << "PageTable: Cleared all entries" << endl;
     }
 
     // Check if a VPN exists in page table (valid or invalid)

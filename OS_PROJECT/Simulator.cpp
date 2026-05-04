@@ -87,15 +87,12 @@ public:
 
         if (algorithm == "FIFO" || algorithm == "fifo") {
             replacementAlgo = new FIFOReplacement(numFrames);
-            cout << "\n[ALGORITHM] Using FIFO Replacement Algorithm" << endl;
         }
         else if (algorithm == "LRU" || algorithm == "lru") {
             replacementAlgo = new LRUReplacement(numFrames);
-            cout << "\n[ALGORITHM] Using LRU Replacement Algorithm" << endl;
         }
         else if (algorithm == "OPT" || algorithm == "opt") {
             replacementAlgo = new OPTReplacement(numFrames);
-            cout << "\n[ALGORITHM] Using OPT Replacement Algorithm" << endl;
         }
         else {
             cout << "\n[WARNING] Unknown algorithm '" << algorithm << "'. Using LRU." << endl;
@@ -106,6 +103,7 @@ public:
     void precomputeAddresses()
     {
         addrGenerator.precomputeVPNsAndOffsets();
+        addrGenerator.printAddrStats();
     }
 
     uint32_t recordPhysicalAddress(uint32_t frameNumber, uint32_t offset)
@@ -270,11 +268,7 @@ public:
 
     void runSimulation(const string& algorithm)
     {
-        cout << "\n" << string(70, '=') << endl;
-        cout << "STARTING SIMULATION  [" << algorithm << "]" << endl;
-        cout << string(70, '=') << endl;
-
-        precomputeAddresses();
+        precomputeAddresses();          //addresses reloaded each time
         setReplacementAlgorithm(algorithm);
 
         const auto& vpns = addrGenerator.getVPNs();
@@ -282,13 +276,10 @@ public:
         const auto& validity = addrGenerator.getValidity();
         const auto& writeFlags = addrGenerator.getWriteFlags();
 
-        cout << "\nSimulating " << vpns.size() << " references..." << endl;
         cout << string(70, '-') << endl;
 
         OPTReplacement* opt = dynamic_cast<OPTReplacement*>(replacementAlgo);
         if (opt) opt->setFutureReferences(vpns);
-
-        cout << endl;
 
         for (size_t i = 0; i < vpns.size(); i++) {
             processReference(vpns[i], offsets[i], writeFlags[i], validity[i], i + 1);
@@ -298,18 +289,116 @@ public:
         printFinalResults();
     }
 
+    void runComparison()
+    {
+        cout << "\n";
+        cout << "ALGORITHM PERFORMANCE COMPARISON" << endl;
+        cout << endl;
+
+        // Store results for each algorithm
+        struct Results {
+            string name;
+            uint32_t pageFaults, pageHits;
+            double faultRate, HitRate;
+            uint32_t tlbHits;
+            double tlbHitRate;
+            uint32_t diskWrites;
+            double eat;
+        };
+
+        vector<Results> results;
+        vector<string> algorithms = { "FIFO", "LRU", "OPT" };
+
+        for (const string& algo : algorithms) {
+            // Reset everything before each run
+            reset();
+
+            // Set up for this algorithm
+            setReplacementAlgorithm(algo);
+            addrGenerator.precomputeVPNsAndOffsets();
+
+            const auto& vpns = addrGenerator.getVPNs();
+            const auto& offsets = addrGenerator.getOffsets();
+            const auto& validity = addrGenerator.getValidity();
+            const auto& writeFlags = addrGenerator.getWriteFlags();
+
+            // OPT needs future references
+            OPTReplacement* opt = dynamic_cast<OPTReplacement*>(replacementAlgo);
+            if (opt) opt->setFutureReferences(vpns);
+
+            // Run simulation
+            for (size_t i = 0; i < vpns.size(); i++) {
+                processReference(vpns[i], offsets[i], writeFlags[i], validity[i], i + 1);
+                if (opt) opt->advancePosition();
+            }
+
+            // Store results
+            Results r;
+            r.name = algo;
+            r.pageFaults = stats.getPageFaults();
+            r.faultRate = stats.getPageFaultRate();
+            r.pageHits = stats.getPageHits();
+            r.HitRate = stats.getPageHitRate();
+            r.tlbHits = stats.getTLBHits();
+            r.tlbHitRate = stats.getTLBHitRate();
+            r.diskWrites = stats.getDiskWrites();
+            r.eat = stats.getEAT();
+            results.push_back(r);
+        }
+
+        // Print header
+        cout << left
+            << setw(12) << "Algorithm"
+            << setw(14) << "Page Faults"
+            << setw(12) << "Fault %"
+            << setw(14) << "Page Hits"
+            << setw(12) << "Hit %"
+            << setw(12) << "TLB Hits"
+            << setw(12) << "TLB Hit %"
+            << setw(14) << "Disk Writes"
+            << setw(14) << "EAT (ns)" << endl;
+
+        // Print each result
+        for (const auto& r : results) {
+            cout << left
+                << setw(12) << r.name
+                << setw(14) << r.pageFaults
+                << setw(12) << fixed << setprecision(2) << r.HitRate
+                << setw(14) << r.pageHits
+                << setw(12) << fixed << setprecision(2) << r.faultRate
+                << setw(12) << r.tlbHits
+                << setw(12) << fixed << setprecision(2) << r.tlbHitRate
+                << setw(14) << r.diskWrites
+                << setw(14) << fixed << setprecision(2) << r.eat << endl;
+        }
+
+        cout << endl;
+
+        // Find best algorithm
+        auto bestEAT = min_element(results.begin(), results.end(),
+            [](const Results& a, const Results& b) { return a.eat < b.eat; });
+
+        auto bestFault = min_element(results.begin(), results.end(),
+            [](const Results& a, const Results& b) { return a.pageFaults < b.pageFaults; });
+
+        cout << "Summary:" << endl;
+        cout << "  Best EAT:         " << bestEAT->name << " (" << fixed << setprecision(2) << bestEAT->eat << " ns)" << endl;
+        cout << "  Best Fault Rate:  " << bestFault->name << " (" << fixed << setprecision(2) << bestFault->faultRate << "%)" << endl;
+    }
+
     void runBeladyTest(uint32_t maxFrames = 8)
     {
-        cout << "\n" << string(70, '=') << endl;
-        cout << "BELADY'S ANOMALY TEST  (FIFO, frames 1.." << maxFrames << ")" << endl;
-        cout << string(70, '-') << endl;
+        cout << "\n";
+        cout << "BELADY'S ANOMALY TEST (FIFO)" << endl;
+        cout << endl;
+
         cout << left
-            << setw(14) << "Frames"
+            << setw(10) << "Frames"
             << setw(15) << "Page Faults"
-            << setw(12) << "TLB Hits"
+            << setw(12) << "Page Hits"
+            << setw(10) << "TLB Hits"
             << setw(16) << "EAT (ns)"
-            << "Belady?" << endl;
-        cout << string(70, '-') << endl;
+            << "Anomaly?" << endl;
 
         uint32_t prevFaults = UINT32_MAX;
 
@@ -342,22 +431,18 @@ public:
             bool anomaly = (prevFaults != UINT32_MAX && faults > prevFaults);
 
             cout << left
-                << setw(14) << frames
+                << setw(10) << frames
                 << setw(15) << faults
-                << setw(12) << stats.getTLBHits()
+                << setw(12) << stats.getPageHits()
+                << setw(10) << stats.getTLBHits()
                 << setw(16) << fixed << setprecision(2) << stats.getEAT()
-                << (anomaly ? "<-- BELADY'S ANOMALY!" : "") << endl;
+                << (anomaly ? "YES <--" : "NO") << endl;
 
             prevFaults = faults;
         }
 
-        cout << string(70, '=') << endl;
-        cout << "Note: Belady's Anomaly only occurs with FIFO, never with LRU or OPT." << endl;
-
-        //original frame count
-        physicalRAM = PhysicalRAM(numFrames);
-        tlb = TLB(tlbSize);
-        if (replacementAlgo) { delete replacementAlgo; replacementAlgo = nullptr; }
+        cout << endl;
+        cout << "Note: Belady's Anomaly occurs when more frames cause MORE page faults." << endl;
     }
 
     void printFinalResults()
@@ -375,6 +460,7 @@ public:
         cout << "SIMULATION COMPLETE  [" << replacementAlgo->getName() << "]" << endl;
         cout << string(70, '=') << endl;
     }
+
 };
 
 // ============================================================================
@@ -391,7 +477,7 @@ int main()
     Simulator sim;
 
     string configFile = "Config.txt";
-    string traceFile = "Trace_Memory_Check.txt";
+    string traceFile = "ComparisonTrace.txt";
 
     if (!sim.loadConfiguration(configFile)) { cerr << "Failed to load config!" << endl; return 1; }
     if (!sim.loadTraceFile(traceFile)) { cerr << "Failed to load trace!" << endl;  return 1; }
@@ -411,16 +497,20 @@ int main()
     // reset() before debug run
     sim.reset();
 
+    // algorithm performance comparison
+    sim.runComparison();
+    system("pause");
+
     // Debug mode
     cout << "\n\n=== DEBUG MODE (step-by-step trace) ===" << endl;
-    sim.setDebugMode(true);
-    sim.runSimulation("LRU");
+    sim.setDebugMode(false);
+    //sim.runSimulation("LRU");
     sim.setDebugMode(false);
     system("pause");
 
     // Belady's Anomaly comparison table
     sim.reset();
-    sim.runBeladyTest(8);
+    sim.runBeladyTest(4);
 
     return 0;
 }

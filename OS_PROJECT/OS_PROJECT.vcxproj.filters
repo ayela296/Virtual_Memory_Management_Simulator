@@ -46,5 +46,14 @@
     <Text Include="Config.txt">
       <Filter>Header Files</Filter>
     </Text>
+    <Text Include="ComparisonTrace.txt">
+      <Filter>Header Files</Filter>
+    </Text>
+    <Text Include="BeladayTrace.txt">
+      <Filter>Header Files</Filter>
+    </Text>
+    <Text Include="simpletrace.txt">
+      <Filter>Header Files</Filter>
+    </Text>
   </ItemGroup>
 </Project>

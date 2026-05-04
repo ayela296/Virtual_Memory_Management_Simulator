@@ -13,7 +13,6 @@ using namespace std;
 // ============================================================================
 struct system_config
 {
-//Hello
     uint32_t physicalRAMSize;
     uint32_t pageSize;
     uint32_t tlbSize;
@@ -60,7 +59,7 @@ struct system_config
 };
 
 // ============================================================================
-// CLASS 1: CONFIG PARSER - Reads configuration from .TXT file
+// CLASS 1: CONFIG PARSER
 // ============================================================================
 class ConfigParser {
 private:
@@ -162,7 +161,7 @@ public:
 };
 
 // ============================================================================
-// CLASS 2: TRACE PARSER - Reads virtual addresses from trace file
+// CLASS 2: TRACE PARSER
 // ============================================================================
 
 class TraceParser {
@@ -282,7 +281,7 @@ public:
 };
 
 // ============================================================================
-// CLASS 3: ADDRESS GENERATOR - Precomputes VPNs and offsets from valid virtual addresses
+// CLASS 3: ADDRESS GENERATOR 
 // ============================================================================
 class AddressGenerator
 {
@@ -297,6 +296,8 @@ private:
     const ConfigParser& config;
     int validAddressCount;
     int invalidAddressCount;
+
+    uint32_t MaxAddr, MinAddr;
 public:
     AddressGenerator(const TraceParser& t, const ConfigParser& c) : trace(t), config(c), validAddressCount(0), invalidAddressCount(0) {}
 
@@ -333,10 +334,16 @@ public:
                 writeFlags.push_back(trace.getWriteFlags()[i]);
             }
         }
+        MaxAddr = maxValidAddress;
+        MinAddr = minValidAddress;
+    }
+
+    void printAddrStats()
+    {
         cout << "\n=== ADDRESS GENERATOR SUMMARY ===" << endl;
         cout << "Total addresses processed: " << trace.size() << endl;
-        cout << "Valid address range: 0x" << hex << minValidAddress
-            << " - 0x" << maxValidAddress << dec << endl;
+        cout << "Valid address range: 0x" << hex << MaxAddr
+            << " - 0x" << MinAddr << dec << endl;
         cout << "Valid addresses: " << validAddressCount << endl;
         cout << "Out of bounds addresses: " << invalidAddressCount << endl << endl;
     }

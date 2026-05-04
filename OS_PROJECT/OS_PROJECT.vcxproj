@@ -135,7 +135,10 @@
     <ClCompile Include="Simulator.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <Text Include="BeladayTrace.txt" />
+    <Text Include="ComparisonTrace.txt" />
     <Text Include="Config.txt" />
+    <Text Include="simpletrace.txt" />
     <Text Include="Trace_Memory_Check.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

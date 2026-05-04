@@ -9,7 +9,7 @@
 using namespace std;
 
 // ============================================================================
-// VIRTUAL DISK MODEL (Write-Back)
+// CLASS 11: Virutal Disk 
 // ============================================================================
 class VirtualDisk
 {
@@ -49,6 +49,9 @@ public:
     }
 };
 
+// ============================================================================
+// CLASS 12: Statistics Engine
+// ============================================================================
 class StatsEngine {
 private:
     uint32_t totalReferences;
@@ -121,6 +124,7 @@ public:
     uint32_t getTotalReferences() const { return totalReferences; }
     uint32_t getTLBHits() const { return tlbHits; }
     uint32_t getTLBMisses() const { return tlbMisses; }
+    uint32_t getPageHits() const { return pageHits; }
     uint32_t getPageFaults() const { return pageFaults; }
     uint32_t getDiskReads() const { return diskReads; }
     uint32_t getDiskWrites() const { return diskWrites; }
