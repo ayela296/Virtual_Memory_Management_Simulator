@@ -129,7 +129,7 @@ public:
 
         // Convert to KB/MB for readability
         if (config.physicalRAMSize >= 1024 * 1024)
-            cout << " (" << config.physicalRAMSize / (1024 * 1024) << " MB)";
+            cout << " (" << config.physicalRAMSize / (1024) << " KB) (" << config.physicalRAMSize / (1024*1024) << " MB) ( " << config.physicalRAMSize / (1024*1024*1024) << "GB)e5";
         else if (config.physicalRAMSize >= 1024)
             cout << " (" << config.physicalRAMSize / 1024 << " KB)";
         cout << endl;

@@ -135,6 +135,8 @@
     <ClCompile Include="Simulator.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <Text Include="..\..\..\..\..\Downloads\addresses.txt" />
+    <Text Include="..\..\..\..\..\OneDrive\ドキュメント\SEMESTER_04\EC-221 Operating System\Project\Project Code\memory_trace.txt" />
     <Text Include="BeladayTrace.txt" />
     <Text Include="ComparisonTrace.txt" />
     <Text Include="Config.txt" />

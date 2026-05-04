@@ -74,7 +74,7 @@ public:
 
     void recordTLBHit() {
         tlbHits++;
-        totalTime += TLB_Latency;
+        totalTime += TLB_Latency + RAM_Latency;
     }
 
     void recordTLBMiss() {
@@ -84,13 +84,13 @@ public:
 
     void recordPageHit() {
         pageHits++;
-        totalTime += TLB_Latency + RAM_Latency;
+        totalTime += TLB_Latency + RAM_Latency + RAM_Latency;
     }
 
     void recordPageFault() {
         pageFaults++;
         diskReads++;
-        totalTime += TLB_Latency + RAM_Latency + Disk_Latency;
+        totalTime += TLB_Latency + RAM_Latency + Disk_Latency + RAM_Latency;
     }
 
     void recordDirtyWrite() {   //check on eviction if the page is dirty, if so we write it back to disk    

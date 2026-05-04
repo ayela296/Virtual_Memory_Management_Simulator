@@ -55,5 +55,11 @@
     <Text Include="simpletrace.txt">
       <Filter>Header Files</Filter>
     </Text>
+    <Text Include="..\..\..\..\..\OneDrive\ドキュメント\SEMESTER_04\EC-221 Operating System\Project\Project Code\memory_trace.txt">
+      <Filter>Header Files</Filter>
+    </Text>
+    <Text Include="..\..\..\..\..\Downloads\addresses.txt">
+      <Filter>Header Files</Filter>
+    </Text>
   </ItemGroup>
 </Project>

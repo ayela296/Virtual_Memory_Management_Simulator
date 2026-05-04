@@ -477,7 +477,7 @@ int main()
     Simulator sim;
 
     string configFile = "Config.txt";
-    string traceFile = "ComparisonTrace.txt";
+    string traceFile = "simpletrace.txt";
 
     if (!sim.loadConfiguration(configFile)) { cerr << "Failed to load config!" << endl; return 1; }
     if (!sim.loadTraceFile(traceFile)) { cerr << "Failed to load trace!" << endl;  return 1; }
